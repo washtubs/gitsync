@@ -88,8 +88,8 @@ function _branch-has-things-to-push() {
     # B: branch's HEAD isn't *itself* the merge base
     local repo_dir=$1
     local branch=$2
-    [ ! -z "$(git -C $dev/$repo_dir branch $branch --contains $(git -C $dev/$repo_dir merge-base $branch origin/$branch) | grep '^\*')" ] \
-        && [ ! "$(git -C $dev/$repo_dir rev-parse $branch)" = "$(git -C $dev/$repo_dir merge-base $branch origin/$branch)" ]
+    [ ! -z "$(git -C $reporoot/$repo_dir branch $branch --contains $(git -C $reporoot/$repo_dir merge-base $branch origin/$branch) | grep '^\*')" ] \
+        && [ ! "$(git -C $reporoot/$repo_dir rev-parse $branch)" = "$(git -C $reporoot/$repo_dir merge-base $branch origin/$branch)" ]
 }
 
 function _add-and-auto-commit() {
@@ -111,25 +111,25 @@ function _add-and-auto-commit() {
     _auto-wip-on-top $repo $branch && \
         commit_opts=(--amend --no-edit) || \
         commit_opts=(-m "AUTO_WIP")
-    _gsgit -C $dev/$repo_dir commit $commit_opts &>>$_error_log || \
+    _gsgit -C $reporoot/$repo_dir commit $commit_opts &>>$_error_log || \
         { _msg "Failed to commit AUTO_WIP"; return 1 }
 }
 
 function _push-branch() {
     local repo_dir=$1
     local branch=$2
-    if [ ! -z "$(git -C $dev/$repo_dir status --porcelain)" ]; then # dirty
-        if [ $(_current-branch $dev/$repo_dir) = $ours/$branch ]; then 
-            _add-and-auto-commit $dev/$repo_dir
+    if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
+        if [ $(_current-branch $reporoot/$repo_dir) = $ours/$branch ]; then 
+            _add-and-auto-commit $reporoot/$repo_dir
         else
             _msg "Your *current* branch is dirty and you are not on $ours/$branch"
             return 1
         fi
     fi
-    _gsgit -C $dev/$repo_dir push --force origin $ours/$branch &>>$_error_log || \
+    _gsgit -C $reporoot/$repo_dir push --force origin $ours/$branch &>>$_error_log || \
         { _msg "Failed to push $ours/$branch to origin"; return 1 }
     _branch-has-things-to-push $repo_dir $branch &&
-        { _gsgit -C $dev/$repo_dir push origin $branch &>>$_error_log || \
+        { _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
             { _msg "Failed to push $branch to origin"; return 1 } }
     return 0
 }
@@ -185,7 +185,7 @@ function _git-fetch-all() {
 function _push-repo() {
     local repo_dir=$1
     local ours=$(_our_git_branch)
-    local refs=$dev/$repo_dir/.git/refs/heads/$ours
+    local refs=$reporoot/$repo_dir/.git/refs/heads/$ours
     if [ ! -e $refs -o ! -d $refs ]; then
         _msg "$refs doesnt exist or is not a directory."
         return 1
@@ -203,7 +203,7 @@ function _push-repo() {
 }
 
 function _infer-repo-dir() {
-    python2 -c "import os.path; print os.path.relpath('$(git rev-parse --show-toplevel)', '$dev')"
+    python2 -c "import os.path; print os.path.relpath('$(git rev-parse --show-toplevel)', '$reporoot')"
 }
 
 function _is-mine-branch() {
@@ -236,19 +236,19 @@ function _merge-candidates() {
 }
 
 function _gitsync-should-merge() {
-    local branch=$(_current-branch $dev/$(_infer-repo-dir))
+    local branch=$(_current-branch $reporoot/$(_infer-repo-dir))
     return _is-mine-branch $branch
 }
 
 function _checkout-candidates() {
-    local repo=$dev/$(_infer-repo-dir)
+    local repo=$reporoot/$(_infer-repo-dir)
     local search_in=$repo/.git/refs/heads/$(_our_git_branch)
     find $search_in -type f -exec python2 -c "import os.path; print os.path.relpath('{}', '$search_in')" \;
 }
 
 function _gitsync-can-mount() {
-    local repo=$dev/$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$(_infer-repo-dir))
+    local repo=$reporoot/$(_infer-repo-dir)
+    local branch=$(_current-branch $reporoot/$(_infer-repo-dir))
     if [ ! -e $repo/.git/refs/heads/$(_our_git_branch)/$branch ]; then
         return 0
     else
@@ -258,15 +258,15 @@ function _gitsync-can-mount() {
 
 function _gitsync-can-dissolve() {
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
-    _auto-wip-on-top $dev/$repo_dir $(_current-branch $dev/$repo_dir)
+    local branch=$(_current-branch $reporoot/$repo_dir)
+    _auto-wip-on-top $reporoot/$repo_dir $(_current-branch $reporoot/$repo_dir)
 }
 
 # P U B L I C
 # @public
 # {{{
 
-dev="$DEV"
+reporoot="$DEV"
 repos=( "zshrc" "vimrc" )
 
 function _push-all() {
@@ -281,13 +281,13 @@ function _fetch-all() {
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
         _msg "Fetching $repo_dir ..."
         _indent="    "
-        _report-command _git-fetch-all $dev/$repo_dir
+        _report-command _git-fetch-all $reporoot/$repo_dir
     done
 }
 
 function _gitsync-setup() {
     local branch_to_track=$1
-    local repo=$dev/$(_infer-repo-dir)
+    local repo=$reporoot/$(_infer-repo-dir)
     if [ -z $branch_to_track ]; then
         _msg "You need to supply the name of an existing branch that you want your machine branch to track."
         _msg "gitsync mount master"
@@ -306,7 +306,7 @@ function _gitsync-setup() {
 
 function _gitsync-checkout-ours() {
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
+    local branch=$(_current-branch $reporoot/$repo_dir)
     # confirm branch doesnt start with "ours"
     if ! { _is-mine-branch $branch }; then
         _msg "It appears you are not on a \"mine\" branch"
@@ -314,25 +314,25 @@ function _gitsync-checkout-ours() {
     fi
     local ours_branch=$(_convert-mine-to-ours $branch)
     _msg "$ours_branch"
-    git -C $dev/$repo_dir checkout $ours_branch 
+    git -C $reporoot/$repo_dir checkout $ours_branch 
 }
 
 function _gitsync-checkout-mine() {
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
+    local branch=$(_current-branch $reporoot/$repo_dir)
     # confirm branch doesnt start with "ours"
     if { _is-mine-branch $branch }; then
         _msg "It appears you are already on a \"mine\" branch"
         return 1
     fi
     local mine_branch=$(_convert-ours-to-mine $branch)
-    git -C $dev/$repo_dir checkout $mine_branch
+    git -C $reporoot/$repo_dir checkout $mine_branch
 }
 
 function _gitsync-autocommit() {
     local repo_dir=$(_infer-repo-dir)
     _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
-    _report-command _add-and-auto-commit $dev/$repo_dir 
+    _report-command _add-and-auto-commit $reporoot/$repo_dir 
 }
 
 function _gitsync-push() {
@@ -343,17 +343,17 @@ function _gitsync-push() {
 function _gitsync-swap() {
     # swapping to "ours" triggers a "pull" master merges origin/master
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
+    local branch=$(_current-branch $reporoot/$repo_dir)
     if { _is-mine-branch $branch }; then
-        if [ ! -z "$(git -C $dev/$repo_dir status --porcelain)" ]; then # dirty
-            _add-and-auto-commit $dev/$repo_dir
+        if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
+            _add-and-auto-commit $reporoot/$repo_dir
         fi
         _gitsync-checkout-ours
         git merge origin/$(_convert-mine-to-ours $branch)
     else
-        if { _branch-exists $dev/$repo_dir $(_convert-ours-to-mine $branch) }; then
+        if { _branch-exists $reporoot/$repo_dir $(_convert-ours-to-mine $branch) }; then
             _gitsync-checkout-mine
-            if { _auto-wip-on-top $dev/$repo_dir $(_current-branch $dev/$repo_dir) }; then
+            if { _auto-wip-on-top $reporoot/$repo_dir $(_current-branch $reporoot/$repo_dir) }; then
                 git reset HEAD~1
             fi
         else
@@ -364,7 +364,7 @@ function _gitsync-swap() {
 
 function _gitsync-merge() {
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
+    local branch=$(_current-branch $reporoot/$repo_dir)
     if { _is-mine-branch $branch }; then
         git merge origin/$(_convert-mine-to-ours $branch)
     else
@@ -375,19 +375,19 @@ function _gitsync-merge() {
 function _gitsync-checkout() {
     local checkoutbranch=$1
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
-    git -C $dev/$repo_dir checkout $(_our_git_branch)/$checkoutbranch 
+    local branch=$(_current-branch $reporoot/$repo_dir)
+    git -C $reporoot/$repo_dir checkout $(_our_git_branch)/$checkoutbranch 
 }
 
 function _gitsync-mount() {
     local repo_dir=$(_infer-repo-dir)
-    _gitsync-setup $(_current-branch $dev/$repo_dir)
+    _gitsync-setup $(_current-branch $reporoot/$repo_dir)
 }
 
 function _gitsync-dissolve() {
     local repo_dir=$(_infer-repo-dir)
-    local branch=$(_current-branch $dev/$repo_dir)
-    if { _auto-wip-on-top $dev/$repo_dir $(_current-branch $dev/$repo_dir) }; then
+    local branch=$(_current-branch $reporoot/$repo_dir)
+    if { _auto-wip-on-top $reporoot/$repo_dir $(_current-branch $reporoot/$repo_dir) }; then
         _gsgit reset HEAD~1
     fi
 }
