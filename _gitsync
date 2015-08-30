@@ -1,14 +1,16 @@
 #compdef gitsync
 #autoload
 
-function _words() {
-    comm -13 <(echo $words | tr ' ' '\n' | sort -u) <(_merge-candidates $dev/$(_infer-repo-dir) | sort -u)
+function _unique-merge-candidates() {
+    comm -13 \
+        <(echo $words | tr ' ' '\n' | sort -u) \
+        <(_merge-candidates $dev/$(_infer-repo-dir) | sort -u)
 }
 
 
 function _gs-merge() {
     local candidates 
-    candidates=($(_words))
+    candidates=($(_unique-merge-candidates))
     _describe candidates candidates
 }
 
@@ -20,9 +22,11 @@ function _gs-checkout() {
     fi
 }
 
-_gs_actions=(merge push swap autocommit checkout)
-
 function _gitsync() {
+    _gs_actions=(merge push swap autocommit checkout)
+    if { _gitsync-can-mount }; then
+        _gs_actions=($_gs_actions "mount")
+    fi
     local cur 
     (( cur = CURRENT - 1 ))
     if [ $cur = 1 ]; then

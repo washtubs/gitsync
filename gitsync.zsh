@@ -203,7 +203,7 @@ function _push-repo() {
 }
 
 function _infer-repo-dir() {
-    python2 -c "import os.path; print os.path.relpath('$PWD', '$dev')"
+    python2 -c "import os.path; print os.path.relpath('$(git rev-parse --show-toplevel)', '$dev')"
 }
 
 function _is-mine-branch() {
@@ -246,6 +246,15 @@ function _checkout-candidates() {
     find $search_in -type f -exec python2 -c "import os.path; print os.path.relpath('{}', '$search_in')" \;
 }
 
+function _gitsync-can-mount() {
+    local repo=$dev/$(_infer-repo-dir)
+    local branch=$(_current-branch $dev/$(_infer-repo-dir))
+    if [ ! -e $repo/.git/refs/heads/$(_our_git_branch)/$branch ]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
 # P U B L I C
 # @public
@@ -275,7 +284,7 @@ function _gitsync-setup() {
     local repo=$dev/$(_infer-repo-dir)
     if [ -z $branch_to_track ]; then
         _msg "You need to supply the name of an existing branch that you want your machine branch to track."
-        _msg "_gitsync-setup master"
+        _msg "gitsync mount master"
         return 1
     fi
     local ours=$(_our_git_branch)
@@ -330,10 +339,20 @@ function _gitsync-swap() {
     local repo_dir=$(_infer-repo-dir)
     local branch=$(_current-branch $dev/$repo_dir)
     if { _is-mine-branch $branch }; then
+        if [ ! -z "$(git -C $dev/$repo_dir status --porcelain)" ]; then # dirty
+            _add-and-auto-commit $dev/$repo_dir
+        fi
         _gitsync-checkout-ours
         git merge origin/$(_convert-mine-to-ours $branch)
     else
-        _gitsync-checkout-mine
+        if { _branch-exists $dev/$repo_dir $(_convert-ours-to-mine $branch) }; then
+            _gitsync-checkout-mine
+            if { _auto-wip-on-top $dev/$repo_dir $(_current-branch $dev/$repo_dir) }; then
+                git reset HEAD~1
+            fi
+        else
+            _gitsync-setup $branch
+        fi
     fi
 }
 
@@ -352,6 +371,11 @@ function _gitsync-checkout() {
     local repo_dir=$(_infer-repo-dir)
     local branch=$(_current-branch $dev/$repo_dir)
     git -C $dev/$repo_dir checkout $(_our_git_branch)/$checkoutbranch 
+}
+
+function _gitsync-mount() {
+    local repo_dir=$(_infer-repo-dir)
+    _gitsync-setup $(_current-branch $dev/$repo_dir)
 }
 
 function gitsync() {
@@ -374,6 +398,9 @@ function gitsync() {
             ;;
         checkout)
             _gitsync-checkout $1
+            ;;
+        mount)
+            _gitsync-mount
             ;;
     esac
     _finalize
