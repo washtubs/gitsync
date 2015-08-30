@@ -27,6 +27,9 @@ function _gitsync() {
     if { _gitsync-can-mount }; then
         _gs_actions=($_gs_actions "mount")
     fi
+    if { _gitsync-can-dissolve }; then
+        _gs_actions=($_gs_actions "dissolve")
+    fi
     local cur 
     (( cur = CURRENT - 1 ))
     if [ $cur = 1 ]; then

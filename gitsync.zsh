@@ -135,7 +135,6 @@ function _push-branch() {
 }
 
 function _report-command() {
-    local _error_files_present=false
     if { $@ }; then
 
         # TODO reuse
@@ -150,6 +149,7 @@ function _report-command() {
             _msg "see log: $_error_log" >&2
         else
             rm $_error_log
+            _error_files_present=false
         fi
     else
 
@@ -254,6 +254,12 @@ function _gitsync-can-mount() {
     else
         return 1
     fi
+}
+
+function _gitsync-can-dissolve() {
+    local repo_dir=$(_infer-repo-dir)
+    local branch=$(_current-branch $dev/$repo_dir)
+    _auto-wip-on-top $dev/$repo_dir $(_current-branch $dev/$repo_dir)
 }
 
 # P U B L I C
@@ -378,6 +384,14 @@ function _gitsync-mount() {
     _gitsync-setup $(_current-branch $dev/$repo_dir)
 }
 
+function _gitsync-dissolve() {
+    local repo_dir=$(_infer-repo-dir)
+    local branch=$(_current-branch $dev/$repo_dir)
+    if { _auto-wip-on-top $dev/$repo_dir $(_current-branch $dev/$repo_dir) }; then
+        _gsgit reset HEAD~1
+    fi
+}
+
 function gitsync() {
     _gitsync-sanity || return
     _init
@@ -401,6 +415,9 @@ function gitsync() {
             ;;
         mount)
             _gitsync-mount
+            ;;
+        dissolve)
+            _gitsync-dissolve
             ;;
     esac
     _finalize
