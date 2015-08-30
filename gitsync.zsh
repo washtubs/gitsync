@@ -179,7 +179,7 @@ function _finalize() {
 }
 
 function _git-fetch-all() {
-    _gsgit -C $1 fetch --all &>$_error_log
+    _gsgit -C $1 fetch --all &>>$_error_log
 }
 
 function _push-repo() {
@@ -278,11 +278,17 @@ function _push-all() {
 function _fetch-all() {
     local ours=$(_our_git_branch)
     for repo_dir in $repos; do
-        _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
-        _msg "Fetching $repo_dir ..."
-        _indent="    "
-        _report-command _git-fetch-all $reporoot/$repo_dir
+        _gitsync-fetch $repo_dir
     done
+}
+
+function _gitsync-fetch() {
+    local repo_dir=$1
+    [ -z $repo_dir ] && repo_dir=$(_infer-repo-dir)
+    _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
+    _msg "Fetching $repo_dir ..."
+    _indent="    "
+    _report-command _git-fetch-all $reporoot/$repo_dir
 }
 
 function _gitsync-setup() {
@@ -313,7 +319,6 @@ function _gitsync-checkout-ours() {
         return 1
     fi
     local ours_branch=$(_convert-mine-to-ours $branch)
-    _msg "$ours_branch"
     git -C $reporoot/$repo_dir checkout $ours_branch 
 }
 
@@ -392,6 +397,7 @@ function _gitsync-dissolve() {
     fi
 }
 
+# TODO: fetch-all and push-all integration with async
 function gitsync() {
     _gitsync-sanity || return
     _init
@@ -400,6 +406,9 @@ function gitsync() {
     case $action in
         push)
             _gitsync-push $@
+            ;;
+        fetch)
+            _gitsync-fetch
             ;;
         autocommit)
             _gitsync-autocommit

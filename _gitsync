@@ -23,7 +23,7 @@ function _gs-checkout() {
 }
 
 function _gitsync() {
-    _gs_actions=(merge push swap autocommit checkout)
+    _gs_actions=(merge push fetch swap autocommit checkout)
     if { _gitsync-can-mount }; then
         _gs_actions=($_gs_actions "mount")
     fi
