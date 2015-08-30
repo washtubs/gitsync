@@ -144,7 +144,7 @@ function _report-command() {
             rm $_error_log
         fi
 
-        _msg "[SUCCESS]"
+        _msg -e $fg[green]"[SUCCESS]"$reset_color
         if $_error_files_present && [ "$gitsync_report_mode" = "always" ]; then
             _msg "see log: $_error_log" >&2
         else
@@ -160,7 +160,7 @@ function _report-command() {
         fi
 
         $_error_files_present && _msg "Errors occured: $_error_log" >&2
-        _msg "[FAILED]"
+        _msg -e $fg[red]"[FAILED]"$reset_color
     fi
 }
 
