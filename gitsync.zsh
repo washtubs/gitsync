@@ -156,8 +156,11 @@ function _report-command() {
     local success=$?
 
     local _old_suppress=$_suppress
-    if ! $silent; then
-        suppress=false
+    if ! $_silent; then
+        _suppress=false
+    fi
+    if $_suppress_iterative; then
+        _indent=""
     fi
 
     if [ ! -z "$(cat $_error_log)" ]; then
@@ -176,6 +179,7 @@ function _report-command() {
         fi
         _report-log-success $errlog
     else
+        echo 1 > $_exit_code_file 
         _suppress=false # never suppress errors
         _report-log-fail
     fi
@@ -212,6 +216,9 @@ function _init() {
     if $_silent; then
         _suppress=true
     fi
+    if $_suppress_iterative; then
+        _suppress=true
+    fi
 }
 
 function _finalize() {
@@ -221,6 +228,7 @@ function _finalize() {
         echo "    rm /tmp/*.gitsyncerrlog"
     fi
     _error_files_present=false
+    rm $_exit_code_file
 }
 
 function _git-fetch-all() {
@@ -242,7 +250,8 @@ function _push-repo() {
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
         local oldindent=$_indent
         _indent=${_indent}"    "
-        _report-command-async "$ours/$branch ..." _push-branch $repo_dir $branch
+        _report-command-async "pushing $repo_dir @ $ours/$branch" _push-branch $repo_dir $branch &
+        pids=($pids $!)
         _indent=$oldindent
     done
 }
@@ -315,9 +324,11 @@ reporoot="$DEV"
 repos=( "zshrc" "vimrc" )
 
 function _push-all() {
+    pids=()
     for repo_dir in $repos; do
         _push-repo $repo_dir
     done
+    wait $pids
 }
 
 function _gitsync-fetch-all() {
@@ -337,7 +348,7 @@ function _gitsync-fetch() {
     _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
     #_msg "Fetching $repo_dir ..."
     #_indent="    "
-    _report-command-async "Fetching $repo_dir" _git-fetch-all $reporoot/$repo_dir
+    _report-command-async "fetching $repo_dir" _git-fetch-all $reporoot/$repo_dir
 }
 
 function _gitsync-setup() {
@@ -463,19 +474,23 @@ function _gitsync-dissolve() {
 # TODO: fetch-all and push-all integration with async
 function gitsync() {
     _suppress=false
-    _silent=true
+    _suppress_iterative=true
+    _silent=false
     _gitsync-sanity || return
     _error_files_present=false
     _indent=""
+    _exit_code_file=$(mktemp /tmp/exitcodeXXXX)
     _init
     action=$1
     shift
     case $action in
         push)
-            _gitsync-push $@
+            (_push-all)
+            [[ $(cat $_exit_code_file) = 1 ]] && return 1 || return 0
             ;;
         fetch)
             ( _gitsync-fetch-all )
+            [[ $(cat $_exit_code_file) = 1 ]] && return 1 || return 0
             ;;
         autocommit)
             _gitsync-autocommit
