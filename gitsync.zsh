@@ -380,6 +380,20 @@ function _gitsync-merge() {
     fi
 }
 
+function _gitsync-merge-default() {
+    local repo_dir=$(_infer-repo-dir)
+    local branch=$(_current-branch $reporoot/$repo_dir)
+    if { _is-mine-branch $branch }; then
+        _msg "\"mine\" branch not supported"
+    else
+        local merge_this=$(_convert-ours-to-mine $branch)
+        local suffix=""
+        _auto-wip-on-top $reporoot/$repo $merge_this && suffix="~1"
+        _gsgit merge ${merge_this}${suffix}
+    fi
+
+}
+
 function _gitsync-checkout() {
     local checkoutbranch=$1
     local repo_dir=$(_infer-repo-dir)
@@ -418,6 +432,9 @@ function gitsync() {
             ;;
         merge)
             _gitsync-merge $@
+            ;;
+        merge-default)
+            _gitsync-merge-default
             ;;
         swap)
             _gitsync-swap
