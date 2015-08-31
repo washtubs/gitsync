@@ -153,7 +153,7 @@ function _report-command-async() {
 
 function _report-command() {
     $@ 
-    local success=$!
+    local success=$?
 
     local _old_suppress=$_suppress
     if ! $silent; then
@@ -177,11 +177,19 @@ function _report-command() {
         _report-log-success $errlog
     else
         _suppress=false # never suppress errors
-        $_error_files_present && _msg "Errors occured: $_error_log" >&2
-        _msg -e $fg[red]"[FAILED]"$reset_color
+        _report-log-fail
     fi
 
     _suppress=$_old_suppress
+}
+
+function _report-log-fail() {
+    if ! $_async; then
+        $_error_files_present && _msg "Errors occured: $_error_log"
+        _msg -e $fg[red]"[FAILED]"$reset_color
+    else
+        _msg -e $fg[red]"[FAILED]$reset_color $_message -- error log: $_error_log"
+    fi
 }
 
 function _report-log-success() {
@@ -201,8 +209,8 @@ function _report-log-success() {
 }
 
 function _init() {
-    if $_suppress_iterative; then
-        suppress=true
+    if $_silent; then
+        _suppress=true
     fi
 }
 
@@ -312,20 +320,24 @@ function _push-all() {
     done
 }
 
-function _fetch-all() {
+function _gitsync-fetch-all() {
     local ours=$(_our_git_branch)
+    pids=()
     for repo_dir in $repos; do
-        _gitsync-fetch $repo_dir
+        _msg "Fetching $repo_dir ..."
+        _gitsync-fetch $repo_dir &
+        pids=($pids $!)
     done
+    wait $pids
 }
 
 function _gitsync-fetch() {
     local repo_dir=$1
     [ -z $repo_dir ] && repo_dir=$(_infer-repo-dir)
     _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
-    _msg "Fetching $repo_dir ..."
-    _indent="    "
-    _report-command _git-fetch-all $reporoot/$repo_dir
+    #_msg "Fetching $repo_dir ..."
+    #_indent="    "
+    _report-command-async "Fetching $repo_dir" _git-fetch-all $reporoot/$repo_dir
 }
 
 function _gitsync-setup() {
@@ -450,12 +462,12 @@ function _gitsync-dissolve() {
 
 # TODO: fetch-all and push-all integration with async
 function gitsync() {
-    _silent=false
-    _suppress_iterative=true
+    _suppress=false
+    _silent=true
     _gitsync-sanity || return
     _error_files_present=false
     _indent=""
-    _suppress=false
+    _init
     action=$1
     shift
     case $action in
@@ -463,7 +475,7 @@ function gitsync() {
             _gitsync-push $@
             ;;
         fetch)
-            _gitsync-fetch
+            ( _gitsync-fetch-all )
             ;;
         autocommit)
             _gitsync-autocommit
