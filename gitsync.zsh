@@ -128,9 +128,12 @@ function _push-branch() {
     fi
     _gsgit -C $reporoot/$repo_dir push --force origin $ours/$branch &>>$_error_log || \
         { _msg "Failed to push $ours/$branch to origin"; return 1 }
-    _branch-has-things-to-push $repo_dir $branch &&
-        { _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
-            { _msg "Failed to push $branch to origin"; return 1 } }
+    # TODO: figure this out
+    #_branch-has-things-to-push $repo_dir $branch &&
+        #{ _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
+            #{ _msg "Failed to push $branch to origin"; return 1 } }
+    _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
+        { _msg "Failed to push $branch to origin"; return 1 } 
     return 0
 }
 
