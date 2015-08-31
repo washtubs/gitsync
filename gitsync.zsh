@@ -76,10 +76,15 @@ function _gsgit() {
     echo "git $@"
     echo -----
     git $@
+    echo -----
 }
 
 function _msg() {
-    echo $@ | sed "s|^|${_indent}|" >&2
+    if $_suppress; then
+        echo $@ | sed "s|^|${_indent}|" >> $_error_log
+    else
+        echo $@ | sed "s|^|${_indent}|" >&2
+    fi
 }
 
 function _branch-has-things-to-push() {
@@ -137,39 +142,68 @@ function _push-branch() {
     return 0
 }
 
+function _report-command-async() {
+    _async=true
+    _message=$1
+    shift
+    _report-command $@
+    unset $_async
+    unset $_message
+}
+
 function _report-command() {
-    if { $@ }; then
+    $@ 
+    local success=$!
 
-        # TODO reuse
-        if [ ! -z "$(cat $_error_log)" ]; then
-            _error_files_present=true
-        else
-            rm $_error_log
-        fi
+    local _old_suppress=$_suppress
+    if ! $silent; then
+        suppress=false
+    fi
 
-        _msg -e $fg[green]"[SUCCESS]"$reset_color
+    if [ ! -z "$(cat $_error_log)" ]; then
+        _error_files_present=true
+    else
+        rm $_error_log
+    fi
+
+    if [ $success = 0 ]; then
+        local errlog=1
         if $_error_files_present && [ "$gitsync_report_mode" = "always" ]; then
-            _msg "see log: $_error_log" >&2
+            errlog=0
         else
             rm $_error_log
             _error_files_present=false
         fi
+        _report-log-success $errlog
     else
-
-        if [ ! -z "$(cat $_error_log)" ]; then
-            _error_files_present=true
-        else
-            rm $_error_log
-        fi
-
+        _suppress=false # never suppress errors
         $_error_files_present && _msg "Errors occured: $_error_log" >&2
         _msg -e $fg[red]"[FAILED]"$reset_color
+    fi
+
+    _suppress=$_old_suppress
+}
+
+function _report-log-success() {
+    local errlog=$1
+    if ! $_async; then
+        _msg -e $fg[green]"[SUCCESS]"$reset_color
+        if [ $errlog = 0 ]; then # yes
+            _msg "see log: $_error_log" >&2
+        fi
+    else
+        local suffix=""
+        if [ $errlog = 0 ]; then # yes
+            suffix " -- see log: $_error_log"
+        fi
+        _msg -e $fg[green]"[SUCCESS]"$reset_color: ${_message}${suffix}
     fi
 }
 
 function _init() {
-    _error_files_present=false
-    _indent=""
+    if $_suppress_iterative; then
+        suppress=true
+    fi
 }
 
 function _finalize() {
@@ -200,7 +234,7 @@ function _push-repo() {
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
         local oldindent=$_indent
         _indent=${_indent}"    "
-        _report-command _push-branch $repo_dir $branch
+        _report-command-async "$ours/$branch ..." _push-branch $repo_dir $branch
         _indent=$oldindent
     done
 }
@@ -416,8 +450,12 @@ function _gitsync-dissolve() {
 
 # TODO: fetch-all and push-all integration with async
 function gitsync() {
+    _silent=false
+    _suppress_iterative=true
     _gitsync-sanity || return
-    _init
+    _error_files_present=false
+    _indent=""
+    _suppress=false
     action=$1
     shift
     case $action in
