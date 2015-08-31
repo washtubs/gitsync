@@ -206,7 +206,7 @@ function _report-log-success() {
     else
         local suffix=""
         if [ $errlog = 0 ]; then # yes
-            suffix " -- see log: $_error_log"
+            suffix=" -- see log: $_error_log"
         fi
         _msg -e $fg[green]"[SUCCESS]"$reset_color: ${_message}${suffix}
     fi
@@ -474,7 +474,6 @@ function _gitsync-dissolve() {
 # TODO: fetch-all and push-all integration with async
 function gitsync() {
     _suppress=false
-    _suppress_iterative=true
     _silent=false
     _gitsync-sanity || return
     _error_files_present=false
@@ -485,10 +484,14 @@ function gitsync() {
     shift
     case $action in
         push)
+            _suppress_iterative=true
+            _suppress=true
             (_push-all)
             [[ $(cat $_exit_code_file) = 1 ]] && return 1 || return 0
             ;;
         fetch)
+            _suppress_iterative=true
+            _suppress=true
             ( _gitsync-fetch-all )
             [[ $(cat $_exit_code_file) = 1 ]] && return 1 || return 0
             ;;
