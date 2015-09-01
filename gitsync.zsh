@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
+# TODO: namespace these down
+
 #
 # G I T   S Y N C
 # @gitsync
@@ -28,7 +30,7 @@ function _our_git_branch() {
 _gitsync_checklist=( \
     '$branch_to_track must be *your* branch, not one shared with other people.' \
     '$branch_to_track mast have an upstream at origin with the same name.' \
-    'gitignores are taken care of... `git add .` will be used liberally...' \
+    'gitignores are taken care of... \"git add .\" will be used liberally...' \
 )
 
 function _verify-checklist() {
@@ -64,8 +66,8 @@ function _branch-exists() {
     git -C $1 rev-parse --verify $2 &>/dev/null
 }
 
-function _new-files-staged() {
-    git -C $1 status --porcelain | awk '$1=="A"{print $2}'
+function _new-files() {
+    git -C $1 status --porcelain | awk '$1=="A"||$1=="??"{print $2}'
 }
 
 function _auto-wip-on-top() {
@@ -93,8 +95,8 @@ function _branch-has-things-to-push() {
     # B: branch's HEAD isn't *itself* the merge base
     local repo_dir=$1
     local branch=$2
-    [ ! -z "$(git -C $reporoot/$repo_dir branch $branch --contains $(git -C $reporoot/$repo_dir merge-base $branch origin/$branch) | grep '^\*')" ] \
-        && [ ! "$(git -C $reporoot/$repo_dir rev-parse $branch)" = "$(git -C $reporoot/$repo_dir merge-base $branch origin/$branch)" ]
+    [ ! -z "$(git -C $reporoot/$repo_dir branch $branch --contains $(git -C $reporoot/$repo_dir merge-base $branch origin/$branch) | grep "\s$branch$")" ] \
+        || [ ! "$(git -C $reporoot/$repo_dir rev-parse $branch)" = "$(git -C $reporoot/$repo_dir merge-base $branch origin/$branch)" ]
 }
 
 function _add-and-auto-commit() {
@@ -104,13 +106,13 @@ function _add-and-auto-commit() {
         _msg "Not autocommiting you are not on a \"mine\" branch."
         return 1
     fi
-    git -C $repo add .
-    if [ ! -z "$(_new-files-staged $repo)" ]; then
-        _msg "New files have been staged:"
-        _new-files-staged $repo | cat -n | sed 's/^\s*//' | sed 's/^/    /'
+    if [ ! -z "$(_new-files $repo)" ]; then
+        _msg "New files will be staged:"
+        _new-files $repo | cat -n | sed 's/^\s*//' | sed 's/^/    /'
         _verify "Please verify that these are ok and shouldn't be ignored." || \
             return 1
     fi
+    git -C $repo add .
     local commit_opts
     commit_opts=()
     _auto-wip-on-top $repo $branch && \
@@ -125,7 +127,7 @@ function _push-branch() {
     local branch=$2
     if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
         if [ $(_current-branch $reporoot/$repo_dir) = $ours/$branch ]; then 
-            _add-and-auto-commit $reporoot/$repo_dir
+            _add-and-auto-commit $reporoot/$repo_dir || return 1
         else
             _msg "Your *current* branch is dirty and you are not on $ours/$branch"
             return 1
@@ -133,12 +135,9 @@ function _push-branch() {
     fi
     _gsgit -C $reporoot/$repo_dir push --force origin $ours/$branch &>>$_error_log || \
         { _msg "Failed to push $ours/$branch to origin"; return 1 }
-    # TODO: figure this out
-    #_branch-has-things-to-push $repo_dir $branch &&
-        #{ _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
-            #{ _msg "Failed to push $branch to origin"; return 1 } }
-    _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
-        { _msg "Failed to push $branch to origin"; return 1 } 
+    _branch-has-things-to-push $repo_dir $branch &&
+        { _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
+            { _msg "Failed to push $branch to origin"; return 1 } }
     return 0
 }
 
@@ -151,9 +150,16 @@ function _report-command-async() {
     unset $_message
 }
 
+function _error-log-has-errors() {
+    # try to be pretty specific here. We really dont want false positives
+    cat $_error_log | grep -P --silent "(error:)"
+}
+
 function _report-command() {
     $@ 
     local success=$?
+    # fail as well if the error log has errors, even though the exit code didnt indicate error
+    _error-log-has-errors && success=1
 
     local _old_suppress=$_suppress
     if ! $_silent; then
@@ -190,16 +196,16 @@ function _report-command() {
 function _report-log-fail() {
     if ! $_async; then
         $_error_files_present && _msg "Errors occured: $_error_log"
-        _msg -e $fg[red]"[FAILED]"$reset_color
+        _msg -e "[$fg[red]FAILED${reset_color}]"
     else
-        _msg -e $fg[red]"[FAILED]$reset_color $_message -- error log: $_error_log"
+        _msg -e "[$fg[red]FAILED${reset_color}]: $_message -- error log: $_error_log"
     fi
 }
 
 function _report-log-success() {
     local errlog=$1
     if ! $_async; then
-        _msg -e $fg[green]"[SUCCESS]"$reset_color
+        _msg -e "[$fg[green]SUCCESS${reset_color}]"
         if [ $errlog = 0 ]; then # yes
             _msg "see log: $_error_log" >&2
         fi
@@ -208,17 +214,11 @@ function _report-log-success() {
         if [ $errlog = 0 ]; then # yes
             suffix=" -- see log: $_error_log"
         fi
-        _msg -e $fg[green]"[SUCCESS]"$reset_color: ${_message}${suffix}
+        _msg -e "[$fg[green]SUCCESS${reset_color}]": ${_message}${suffix}
     fi
 }
 
 function _init() {
-    if $_silent; then
-        _suppress=true
-    fi
-    if $_suppress_iterative; then
-        _suppress=true
-    fi
 }
 
 function _finalize() {
@@ -239,6 +239,7 @@ function _push-repo() {
     local repo_dir=$1
     local ours=$(_our_git_branch)
     local refs=$reporoot/$repo_dir/.git/refs/heads/$ours
+    local exit_code=0
     if [ ! -e $refs -o ! -d $refs ]; then
         _msg "$refs doesnt exist or is not a directory."
         return 1
@@ -251,9 +252,11 @@ function _push-repo() {
         local oldindent=$_indent
         _indent=${_indent}"    "
         _report-command-async "pushing $repo_dir @ $ours/$branch" _push-branch $repo_dir $branch &
+        [ $? = 0 ] || exit_code=1
         pids=($pids $!)
         _indent=$oldindent
     done
+    return $exit_code
 }
 
 function _infer-repo-dir() {
@@ -282,10 +285,10 @@ function _merge-candidates() {
             find $root -path "*-dev/$ours_branch" -exec python2 -c "import os.path; print os.path.relpath('{}', '$root')" \;
         done | sort -u | grep -v "origin/$(_our_git_branch)/$ours_branch" \
     ))
-    for c in $res; do
+    for candidate in $res; do
         local suffix=""
-        _auto-wip-on-top $repo $c && suffix="~1"
-        echo ${c}${suffix}
+        _auto-wip-on-top $repo $candidate && suffix="~1"
+        echo ${candidate}${suffix}
     done
 }
 
@@ -303,10 +306,11 @@ function _checkout-candidates() {
 function _gitsync-can-mount() {
     local repo=$reporoot/$(_infer-repo-dir)
     local branch=$(_current-branch $reporoot/$(_infer-repo-dir))
-    if [ ! -e $repo/.git/refs/heads/$(_our_git_branch)/$branch ]; then
-        return 0
-    else
+    _is-mine-branch $branch && return 1
+    if [ -e $repo/.git/refs/heads/$(_our_git_branch)/$branch ]; then
         return 1
+    else
+        return 0
     fi
 }
 
@@ -411,7 +415,7 @@ function _gitsync-swap() {
     local branch=$(_current-branch $reporoot/$repo_dir)
     if { _is-mine-branch $branch }; then
         if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
-            _add-and-auto-commit $reporoot/$repo_dir
+            _add-and-auto-commit $reporoot/$repo_dir || return 1
         fi
         _gitsync-checkout-ours
         git merge origin/$(_convert-mine-to-ours $branch)
@@ -448,7 +452,6 @@ function _gitsync-merge-default() {
         _auto-wip-on-top $reporoot/$repo $merge_this && suffix="~1"
         _gsgit merge ${merge_this}${suffix}
     fi
-
 }
 
 function _gitsync-checkout() {
@@ -473,27 +476,28 @@ function _gitsync-dissolve() {
 
 # TODO: fetch-all and push-all integration with async
 function gitsync() {
+    gitsync_report_mode="always" # hard coding this because I'm having trouble dealing with git commands returning zeros when they shouldnt (see: _error-log-has-errors)
     _suppress=false
+    _suppress_iterative=false
     _silent=false
     _gitsync-sanity || return
     _error_files_present=false
     _indent=""
     _exit_code_file=$(mktemp /tmp/exitcodeXXXX)
-    _init
+    echo 0 > $_exit_code_file
     action=$1
+    exit_code=0
     shift
     case $action in
         push)
             _suppress_iterative=true
             _suppress=true
             (_push-all)
-            [[ $(cat $_exit_code_file) = 1 ]] && return 1 || return 0
             ;;
         fetch)
             _suppress_iterative=true
             _suppress=true
             ( _gitsync-fetch-all )
-            [[ $(cat $_exit_code_file) = 1 ]] && return 1 || return 0
             ;;
         autocommit)
             _gitsync-autocommit
@@ -517,7 +521,9 @@ function gitsync() {
             _gitsync-dissolve
             ;;
     esac
+            [[ $(cat $_exit_code_file) = 1 ]] && exit_code=1
     _finalize
+    return $exit_code
 }
 
 #workflow

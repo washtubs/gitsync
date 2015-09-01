@@ -3,8 +3,8 @@
 
 function _unique-merge-candidates() {
     comm -13 \
-        <(echo $words | tr ' ' '\n' | sort -u) \
-        <(_merge-candidates $dev/$(_infer-repo-dir) | sort -u)
+        <(echo $words | tr ' ' '\n' | sed 's|\\~1|~1|g' | sort -u) \
+        <(_merge-candidates $reporoot/$(_infer-repo-dir) | sed 's|\\~1|~1|g' | sort -u)
 }
 
 
