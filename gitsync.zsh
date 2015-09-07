@@ -235,8 +235,8 @@ function _git-fetch-all() {
 }
 
 function _push-repo-async() {
-    local push_async="true"
-    _push-repo
+    push_async="true"
+    _push-repo $1
 }
 
 function _push-repo() {
@@ -248,11 +248,10 @@ function _push-repo() {
         _msg "$refs doesnt exist or is not a directory."
         return 1
     fi
-    _msg "Pushing $repo_dir ..."
-    _indent="    "
+    _indent=""
     for branch in $(ls $refs); do
-        _msg "$ours/$branch ..."
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
+        _msg "pushing $repo_dir @ $ours/$branch ..."
         local oldindent=$_indent
         _indent=${_indent}"    "
         if [ "$push_async" = "true" ]; then
