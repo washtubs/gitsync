@@ -22,17 +22,29 @@ function _gs-checkout() {
     fi
 }
 
+function _gs-fetch-or-push() {
+    local candidates
+    candidates=("--this" "--all")
+    if [ $cur = 2 ]; then
+        _describe candidates candidates
+    fi
+}
+
 function _gitsync() {
-    _gs_actions=(merge push fetch swap autocommit checkout)
-    if { _gitsync-can-mount }; then
-        _gs_actions=($_gs_actions "mount")
-    fi
-    if { _gitsync-can-dissolve }; then
-        _gs_actions=($_gs_actions "dissolve")
-    fi
     local cur 
     (( cur = CURRENT - 1 ))
     if [ $cur = 1 ]; then
+        _gs_actions=(merge push fetch swap autocommit checkout)
+        if { git rev-parse --show-toplevel &>/dev/null }; then
+            if { _gitsync-can-mount }; then
+                _gs_actions=($_gs_actions "mount")
+            fi
+            if { _gitsync-can-dissolve }; then
+                _gs_actions=($_gs_actions "dissolve")
+            fi
+        else
+            _gs_actions=(push fetch)
+        fi
         _describe _gs_actions _gs_actions
     elif [ $cur -ge 2 ]; then
         case $words[2] in
@@ -41,6 +53,9 @@ function _gitsync() {
                 ;;
             checkout)
                 _gs-checkout
+                ;;
+            push|fetch)
+                _gs-fetch-or-push
                 ;;
         esac
     fi
