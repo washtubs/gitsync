@@ -23,7 +23,6 @@ function _gitsync-sanity() {
 }
 
 function _our_git_branch() {
-    local ours
     echo "${machine_id}-dev"
 }
 
@@ -235,6 +234,10 @@ function _git-fetch-all() {
     _gsgit -C $1 fetch --all &>>$_error_log
 }
 
+function _push-repo-async() {
+    local push_async="true"
+}
+
 function _push-repo() {
     local repo_dir=$1
     local ours=$(_our_git_branch)
@@ -251,9 +254,13 @@ function _push-repo() {
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
         local oldindent=$_indent
         _indent=${_indent}"    "
-        _report-command-async "pushing $repo_dir @ $ours/$branch" _push-branch $repo_dir $branch &
-        [ $? = 0 ] || exit_code=1
-        pids=($pids $!)
+        if [ "$push_async" = "true" ]; then
+            _report-command-async "pushing $repo_dir @ $ours/$branch" _push-branch $repo_dir $branch &
+            [ $? = 0 ] || exit_code=1
+            pids=($pids $!)
+        else
+            _report-command _push-branch $repo_dir $branch
+        fi
         _indent=$oldindent
     done
     return $exit_code
@@ -320,6 +327,14 @@ function _gitsync-can-dissolve() {
     _auto-wip-on-top $reporoot/$repo_dir $(_current-branch $reporoot/$repo_dir)
 }
 
+function _fix-branches() {
+
+}
+
+function _get-repos() {
+    find $DEV -path "*/.git/refs/heads/$(_our_git_branch)" -exec python2 -c "import os.path; print os.path.relpath('{}', '$DEV')" \; | sed 's/\/.git.*//'
+}
+
 # P U B L I C
 # @public
 # {{{
@@ -329,8 +344,8 @@ repos=( "zshrc" "vimrc" )
 
 function _push-all() {
     pids=()
-    for repo_dir in $repos; do
-        _push-repo $repo_dir
+    for repo_dir in $(_get-repos); do
+        _push-repo-async $repo_dir
     done
     wait $pids
 }
@@ -338,7 +353,7 @@ function _push-all() {
 function _gitsync-fetch-all() {
     local ours=$(_our_git_branch)
     pids=()
-    for repo_dir in $repos; do
+    for repo_dir in $(_get-repos); do
         _msg "Fetching $repo_dir ..."
         _gitsync-fetch $repo_dir &
         pids=($pids $!)
@@ -490,14 +505,22 @@ function gitsync() {
     shift
     case $action in
         push)
-            _suppress_iterative=true
-            _suppress=true
-            (_push-all)
+            if [ $1 = "--this" ]; then
+                _gitsync-push 
+            else
+                _suppress_iterative=true
+                _suppress=true
+                ( _push-all )
+            fi
             ;;
         fetch)
-            _suppress_iterative=true
-            _suppress=true
-            ( _gitsync-fetch-all )
+            if [ $1 = "--this" ]; then
+                ( _gitsync-fetch )
+            else
+                _suppress_iterative=true
+                _suppress=true
+                ( _gitsync-fetch-all )
+            fi
             ;;
         autocommit)
             _gitsync-autocommit
