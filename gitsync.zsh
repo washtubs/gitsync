@@ -236,6 +236,7 @@ function _git-fetch-all() {
 
 function _push-repo-async() {
     local push_async="true"
+    _push-repo
 }
 
 function _push-repo() {
@@ -505,7 +506,7 @@ function gitsync() {
     shift
     case $action in
         push)
-            if [ $1 = "--this" ]; then
+            if [ "$1" = "--this" ]; then
                 _gitsync-push 
             else
                 _suppress_iterative=true
@@ -514,7 +515,7 @@ function gitsync() {
             fi
             ;;
         fetch)
-            if [ $1 = "--this" ]; then
+            if [ "$1" = "--this" ]; then
                 ( _gitsync-fetch )
             else
                 _suppress_iterative=true
