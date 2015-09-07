@@ -354,7 +354,7 @@ function _gitsync-fetch-all() {
     local ours=$(_our_git_branch)
     pids=()
     for repo_dir in $(_get-repos); do
-        _msg "Fetching $repo_dir ..."
+        _suppress=false _msg "Fetching $repo_dir ..."
         _gitsync-fetch $repo_dir &
         pids=($pids $!)
     done
