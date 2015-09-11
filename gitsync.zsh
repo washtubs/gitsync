@@ -94,8 +94,16 @@ function _branch-has-things-to-push() {
     # B: branch's HEAD isn't *itself* the merge base
     local repo_dir=$1
     local branch=$2
-    [ ! -z "$(git -C $reporoot/$repo_dir branch $branch --contains $(git -C $reporoot/$repo_dir merge-base $branch origin/$branch) | grep "\s$branch$")" ] \
-        || [ ! "$(git -C $reporoot/$repo_dir rev-parse $branch)" = "$(git -C $reporoot/$repo_dir merge-base $branch origin/$branch)" ]
+    _branchA-is-ahead-of-branchB $reporoot/$repo_dir $branch origin/$branch
+}
+
+function _branchA-is-ahead-of-branchB() {
+    local repo=$1
+    local branchA=$2
+    local branchB=$3
+    [ ! -z "$(git -C $repo branch $branchA --contains $(git -C $repo merge-base $branchA $branchB) | grep "\s$branchA$")" ] \
+        && [ ! "$(git -C $repo rev-parse $branchA)" = "$(git -C $repo merge-base $branchA $branchB)" ]
+
 }
 
 function _add-and-auto-commit() {
@@ -117,7 +125,7 @@ function _add-and-auto-commit() {
     _auto-wip-on-top $repo $branch && \
         commit_opts=(--amend --no-edit) || \
         commit_opts=(-m "AUTO_WIP")
-    _gsgit -C $reporoot/$repo_dir commit $commit_opts &>>$_error_log || \
+    _gsgit -C $repo commit $commit_opts || \
         { _msg "Failed to commit AUTO_WIP"; return 1 }
 }
 
@@ -295,7 +303,9 @@ function _merge-candidates() {
     for candidate in $res; do
         local suffix=""
         _auto-wip-on-top $repo $candidate && suffix="~1"
-        echo ${candidate}${suffix}
+        if { _branchA-is-ahead-of-branchB $repo ${candidate}${suffix} $ours_branch }; then
+            echo ${candidate}${suffix}
+        fi
     done
 }
 
