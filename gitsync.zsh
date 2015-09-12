@@ -243,7 +243,8 @@ function _git-fetch-all() {
 }
 
 function _push-repo-async() {
-    local push_async="true"
+    push_async="true"
+    _push-repo $1
 }
 
 function _push-repo() {
@@ -255,11 +256,10 @@ function _push-repo() {
         _msg "$refs doesnt exist or is not a directory."
         return 1
     fi
-    _msg "Pushing $repo_dir ..."
-    _indent="    "
+    _indent=""
     for branch in $(ls $refs); do
-        _msg "$ours/$branch ..."
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
+        _msg "pushing $repo_dir @ $ours/$branch ..."
         local oldindent=$_indent
         _indent=${_indent}"    "
         if [ "$push_async" = "true" ]; then
@@ -364,7 +364,7 @@ function _gitsync-fetch-all() {
     local ours=$(_our_git_branch)
     pids=()
     for repo_dir in $(_get-repos); do
-        _msg "Fetching $repo_dir ..."
+        _suppress=false _msg "Fetching $repo_dir ..."
         _gitsync-fetch $repo_dir &
         pids=($pids $!)
     done
@@ -515,7 +515,7 @@ function gitsync() {
     shift
     case $action in
         push)
-            if [ $1 = "--this" ]; then
+            if [ "$1" = "--this" ]; then
                 _gitsync-push 
             else
                 _suppress_iterative=true
@@ -524,7 +524,7 @@ function gitsync() {
             fi
             ;;
         fetch)
-            if [ $1 = "--this" ]; then
+            if [ "$1" = "--this" ]; then
                 ( _gitsync-fetch )
             else
                 _suppress_iterative=true
