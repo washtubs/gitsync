@@ -332,14 +332,14 @@ function _fix-branches() {
 }
 
 function _get-repos() {
-    find $DEV -path "*/.git/refs/heads/$(_our_git_branch)" -exec python2 -c "import os.path; print os.path.relpath('{}', '$DEV')" \; | sed 's/\/.git.*//'
+    find $reporoot -path "*/.git/refs/heads/$(_our_git_branch)" -exec python2 -c "import os.path; print os.path.relpath('{}', '$reporoot')" \; | sed 's/\/.git.*//'
 }
 
 # P U B L I C
 # @public
 # {{{
 
-reporoot="$DEV"
+reporoot="$HOME/.master/dev"
 repos=( "zshrc" "vimrc" )
 
 function _push-all() {
