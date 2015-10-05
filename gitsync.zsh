@@ -117,7 +117,7 @@ function _add-and-auto-commit() {
     _auto-wip-on-top $repo $branch && \
         commit_opts=(--amend --no-edit) || \
         commit_opts=(-m "AUTO_WIP")
-    _gsgit -C $reporoot/$repo_dir commit $commit_opts &>>$_error_log || \
+    _gsgit -C $reporoot/$repo_dir commit $commit_opts || \
         { _msg "Failed to commit AUTO_WIP"; return 1 }
 }
 
@@ -450,7 +450,7 @@ function _gitsync-merge() {
     local repo_dir=$(_infer-repo-dir)
     local branch=$(_current-branch $reporoot/$repo_dir)
     if { _is-mine-branch $branch }; then
-        git merge origin/$(_convert-mine-to-ours $branch)
+        git merge $(_convert-mine-to-ours $branch)
     else
         _gsgit merge $@
     fi
