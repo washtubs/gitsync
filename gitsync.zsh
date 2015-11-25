@@ -26,6 +26,14 @@ function _our_git_branch() {
     echo "${machine_id}-dev"
 }
 
+function _git_dir() {
+    repo=$1
+    [ -d $repo/.git ] && { echo $repo/.git; return; }
+    [ -f $repo/.git ] && { echo $repo/$(cat $repo/.git | grep "^gitdir:" | sed 's/^gitdir: //'); return; }
+    _msg "$repo/.git does not appear to be a file or directory."
+    
+}
+
 _gitsync_checklist=( \
     '$branch_to_track must be *your* branch, not one shared with other people.' \
     '$branch_to_track mast have an upstream at origin with the same name.' \
@@ -250,7 +258,7 @@ function _push-repo-async() {
 function _push-repo() {
     local repo_dir=$1
     local ours=$(_our_git_branch)
-    local refs=$reporoot/$repo_dir/.git/refs/heads/$ours
+    local refs=$(_git_dir $reporoot/$repo_dir)/refs/heads/$ours
     local exit_code=0
     if [ ! -e $refs -o ! -d $refs ]; then
         _msg "$refs doesnt exist or is not a directory."
@@ -294,7 +302,7 @@ function _merge-candidates() {
     local repo=$1
     local ours_branch=$(_current-branch $repo)
     local search_in
-    search_in=( $repo/.git/refs/heads $repo/.git/refs/remotes/ )
+    search_in=( $(_git_dir $repo)/refs/heads $(_git_dir $repo)/refs/remotes/ )
     res=($( \
         for root in $search_in; do
             find $root -path "*-dev/$ours_branch" -exec python2 -c "import os.path; print os.path.relpath('{}', '$root')" \;
@@ -316,7 +324,7 @@ function _gitsync-should-merge() {
 
 function _checkout-candidates() {
     local repo=$reporoot/$(_infer-repo-dir)
-    local search_in=$repo/.git/refs/heads/$(_our_git_branch)
+    local search_in=$(_git_dir $repo)/refs/heads/$(_our_git_branch)
     find $search_in -type f -exec python2 -c "import os.path; print os.path.relpath('{}', '$search_in')" \;
 }
 
@@ -324,7 +332,7 @@ function _gitsync-can-mount() {
     local repo=$reporoot/$(_infer-repo-dir)
     local branch=$(_current-branch $reporoot/$(_infer-repo-dir))
     _is-mine-branch $branch && return 1
-    if [ -e $repo/.git/refs/heads/$(_our_git_branch)/$branch ]; then
+    if [ -e $(_git_dir $repo)/refs/heads/$(_our_git_branch)/$branch ]; then
         return 1
     else
         return 0
@@ -341,6 +349,7 @@ function _fix-branches() {
 
 }
 
+# TODO account for .git files as directory references, like what _git_dir does
 function _get-repos() {
     find $DEV -path "*/.git/refs/heads/$(_our_git_branch)" -exec python2 -c "import os.path; print os.path.relpath('{}', '$DEV')" \; | sed 's/\/.git.*//'
 }
@@ -460,7 +469,7 @@ function _gitsync-merge() {
     local repo_dir=$(_infer-repo-dir)
     local branch=$(_current-branch $reporoot/$repo_dir)
     if { _is-mine-branch $branch }; then
-        git merge origin/$(_convert-mine-to-ours $branch)
+        git merge $(_convert-mine-to-ours $branch)
     else
         _gsgit merge $@
     fi
