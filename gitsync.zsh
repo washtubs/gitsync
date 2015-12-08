@@ -429,6 +429,10 @@ function _verify-gsremote() {
     else
         _msg "adding remote alias $gsremote -> $url ..."
         git -C $repo remote add $gsremote $url
+        _msg "... and fetching it ..."
+        git -C $repo fetch $gsremote
+        _msg "You may also need to push your branch."
+        _msg "  ex: git push $gsremote master"
         return 0
     fi
 }
