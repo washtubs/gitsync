@@ -256,7 +256,7 @@ function _push-repo() {
     _indent=""
     for branch in $(ls $refs); do
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
-        _msg "pushing $repo_dir @ $ours/$branch ..."
+        _suppress=false _msg "pushing $repo_dir @ $ours/$branch ..."
         local oldindent=$_indent
         _indent=${_indent}"    "
         if [ "$push_async" = "true" ]; then
@@ -356,18 +356,32 @@ function _get-repos() {
 # @public
 # {{{
 
-function _push-all() {
+function _gitsync-push-all() {
     pids=()
-    for repo_dir in $(_get-repos); do
+    _suppress_iterative=true
+    _suppress=true
+    if [ ! -z "$_gitsync_repos" ]; then
+        repos=($_gitsync_repos)
+    else
+        repos=$(_get-repos)
+    fi
+    for repo_dir in $repos; do
         _push-repo-async $repo_dir
     done
     wait $pids
 }
 
 function _gitsync-fetch-all() {
-    local ours=$(_our_git_branch)
     pids=()
-    for repo_dir in $(_get-repos); do
+    _suppress_iterative=true
+    _suppress=true
+    local ours=$(_our_git_branch)
+    if [ ! -z "$_gitsync_repos" ]; then
+        repos=($_gitsync_repos)
+    else
+        repos=$(_get-repos)
+    fi
+    for repo_dir in $repos; do
         _suppress=false _msg "Fetching $repo_dir ..."
         _gitsync-fetch $repo_dir &
         pids=($pids $!)
@@ -565,17 +579,13 @@ function gitsync() {
             if [ "$1" = "--this" ]; then
                 _gitsync-push 
             else
-                _suppress_iterative=true
-                _suppress=true
-                ( _push-all )
+                ( _gitsync-push-all )
             fi
             ;;
         fetch)
             if [ "$1" = "--this" ]; then
                 ( _gitsync-fetch )
             else
-                _suppress_iterative=true
-                _suppress=true
                 ( _gitsync-fetch-all )
             fi
             ;;
@@ -611,7 +621,7 @@ function gitsync() {
 
 #workflow
 # when you're done and when you come back ...
-# _push-all && suspend && _fetch-all && ?merge-public?
+# _gitsync-push-all && suspend && _fetch-all && ?merge-public?
 #
 # while working ...
 # hack away on mine
