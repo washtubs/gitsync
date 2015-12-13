@@ -2,6 +2,10 @@
 
 # TODO: namespace these down
 
+reporoot="$HOME/.master/dev"
+repos=( "zshrc" "vimrc" )
+gsremote="gsprivate"
+
 #
 # G I T   S Y N C
 # @gitsync
@@ -36,7 +40,7 @@ function _git_dir() {
 
 _gitsync_checklist=( \
     '$branch_to_track must be *your* branch, not one shared with other people.' \
-    '$branch_to_track mast have an upstream at origin with the same name.' \
+    '$branch_to_track mast have an upstream at '$gsremote' with the same name.' \
     'gitignores are taken care of... \"git add .\" will be used liberally...' \
 )
 
@@ -99,6 +103,7 @@ function _msg() {
 function _branch-has-things-to-push() {
     # this is basically checking
     # A: branch contains the merge base with upstream
+    # AND
     # B: branch's HEAD isn't *itself* the merge base
     local repo_dir=$1
     local branch=$2
@@ -148,11 +153,11 @@ function _push-branch() {
             return 1
         fi
     fi
-    _gsgit -C $reporoot/$repo_dir push --force origin $ours/$branch &>>$_error_log || \
-        { _msg "Failed to push $ours/$branch to origin"; return 1 }
+    _gsgit -C $reporoot/$repo_dir push --force $gsremote $ours/$branch &>>$_error_log || \
+        { _msg "Failed to push $ours/$branch to $gsremote"; return 1 }
     _branch-has-things-to-push $repo_dir $branch &&
-        { _gsgit -C $reporoot/$repo_dir push origin $branch &>>$_error_log || \
-            { _msg "Failed to push $branch to origin"; return 1 } }
+        { _gsgit -C $reporoot/$repo_dir push $gsremote $branch &>>$_error_log || \
+            { _msg "Failed to push $branch to $gsremote"; return 1 } }
     return 0
 }
 
@@ -267,7 +272,7 @@ function _push-repo() {
     _indent=""
     for branch in $(ls $refs); do
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
-        _msg "pushing $repo_dir @ $ours/$branch ..."
+        _suppress=false _msg "pushing $repo_dir @ $ours/$branch ..."
         local oldindent=$_indent
         _indent=${_indent}"    "
         if [ "$push_async" = "true" ]; then
@@ -306,7 +311,7 @@ function _merge-candidates() {
     res=($( \
         for root in $search_in; do
             find $root -path "*-dev/$ours_branch" -exec python2 -c "import os.path; print os.path.relpath('{}', '$root')" \;
-        done | sort -u | grep -v "origin/$(_our_git_branch)/$ours_branch" \
+        done | sort -u | grep -v "$gsremote/$(_our_git_branch)/$ours_branch" \
     ))
     for candidate in $res; do
         local suffix=""
@@ -346,33 +351,56 @@ function _gitsync-can-dissolve() {
 }
 
 function _fix-branches() {
-
+    local repo_dir=$1
+    local repo=$reporoot/$repo_dir
+    local ours=$(_our_git_branch)
+    local refs=$repo/.git/refs/heads/$ours
+    if [ ! -e $refs -o ! -d $refs ]; then
+        _msg "$refs doesnt exist or is not a directory."
+        return 1
+    fi
+    _msg "Run these to make sure your branches aren't screwy."
+    _msg
+    for branch in $(ls $refs); do
+        _msg "git branch $ours/$branch --set-upstream-to=$gsremote/$branch"
+    done
 }
 
 # TODO account for .git files as directory references, like what _git_dir does
 function _get-repos() {
-    find $DEV -path "*/.git/refs/heads/$(_our_git_branch)" -exec python2 -c "import os.path; print os.path.relpath('{}', '$DEV')" \; | sed 's/\/.git.*//'
+    find $reporoot -path "*/.git/refs/heads/$(_our_git_branch)" -exec python2 -c "import os.path; print os.path.relpath('{}', '$reporoot')" \; | sed 's/\/.git.*//'
 }
 
 # P U B L I C
 # @public
 # {{{
 
-reporoot="$DEV"
-repos=( "zshrc" "vimrc" )
-
-function _push-all() {
+function _gitsync-push-all() {
     pids=()
-    for repo_dir in $(_get-repos); do
+    _suppress_iterative=true
+    _suppress=true
+    if [ ! -z "$_gitsync_repos" ]; then
+        repos=($_gitsync_repos)
+    else
+        repos=$(_get-repos)
+    fi
+    for repo_dir in $repos; do
         _push-repo-async $repo_dir
     done
     wait $pids
 }
 
 function _gitsync-fetch-all() {
-    local ours=$(_our_git_branch)
     pids=()
-    for repo_dir in $(_get-repos); do
+    _suppress_iterative=true
+    _suppress=true
+    local ours=$(_our_git_branch)
+    if [ ! -z "$_gitsync_repos" ]; then
+        repos=($_gitsync_repos)
+    else
+        repos=$(_get-repos)
+    fi
+    for repo_dir in $repos; do
         _suppress=false _msg "Fetching $repo_dir ..."
         _gitsync-fetch $repo_dir &
         pids=($pids $!)
@@ -389,9 +417,50 @@ function _gitsync-fetch() {
     _report-command-async "fetching $repo_dir" _git-fetch-all $reporoot/$repo_dir
 }
 
+function gitolite-verify() {
+    repo=$1
+    if { cat $GITOLITE_ADMIN/conf/gitolite.conf | awk -vrepo=$repo '$1=="repo" && $2==repo{found=1} END{if (found==1){exit 0} else {exit 1}}' }; then
+        _msg remote $repo detected.
+    else
+        _msg remote $repo NOT detected.
+        _msg add the following to your $GITOLITE_ADMIN/conf/gitolite.conf, commit, and push
+        _msg "repo $repo"
+        _msg "    RW+     =   <git.username>"
+    fi
+    echo ${GITOLITE_ADMIN_PREFIX}${repo}
+}
+
+function _verify-gsremote() {
+    local repo=$1
+    local url
+    if [ -z "$(git -C $repo remote -v | awk -valias=$gsremote '$1 == alias{print $1}')" ]; then
+        _msg "You don't seem to have a remote set up for $gsremote."
+        if [ ! -z $GITOLITE_ADMIN ]; then
+            _msg "Would you like us to consult your gitolite admin to ensure that it exists? [y|n]"
+            read answer
+            if [ $answer = "y" ]; then
+                url=$(gitolite-verify $(_infer-repo-dir))
+            fi
+        fi
+    fi
+    if [ -z $url ]; then
+        return 1
+    else
+        _msg "adding remote alias $gsremote -> $url ..."
+        git -C $repo remote add $gsremote $url
+        _msg "... and fetching it ..."
+        git -C $repo fetch $gsremote
+        _msg "You may also need to push your branch."
+        _msg "  ex: git push $gsremote master"
+        return 0
+    fi
+}
+
 function _gitsync-setup() {
     local branch_to_track=$1
     local repo=$reporoot/$(_infer-repo-dir)
+    _verify-gsremote $repo || return 1
+            
     if [ -z $branch_to_track ]; then
         _msg "You need to supply the name of an existing branch that you want your machine branch to track."
         _msg "gitsync mount master"
@@ -399,13 +468,13 @@ function _gitsync-setup() {
     fi
     local ours=$(_our_git_branch)
     # if one already exists from another branch dont ask
-    if ! { _merge-candidates $repo | grep --silent "^origin" }; then
+    if ! { _merge-candidates $repo | grep --silent "^$gsremote" }; then
         _verify-checklist $branch_to_track || return 1
     fi
 
     git -C $repo branch $ours/$branch_to_track $branch_to_track
     git -C $repo checkout $ours/$branch_to_track
-    git -C $repo branch --set-upstream-to=origin/$branch_to_track
+    git -C $repo branch --set-upstream-to=$gsremote/$branch_to_track
 }
 
 function _gitsync-checkout-ours() {
@@ -444,7 +513,7 @@ function _gitsync-push() {
 }
 
 function _gitsync-swap() {
-    # swapping to "ours" triggers a "pull" master merges origin/master
+    # swapping to "ours" triggers a "pull" master merges $gsremote/master
     local repo_dir=$(_infer-repo-dir)
     local branch=$(_current-branch $reporoot/$repo_dir)
     if { _is-mine-branch $branch }; then
@@ -452,7 +521,7 @@ function _gitsync-swap() {
             _add-and-auto-commit $reporoot/$repo_dir || return 1
         fi
         _gitsync-checkout-ours
-        git merge origin/$(_convert-mine-to-ours $branch)
+        git merge $gsremote/$(_convert-mine-to-ours $branch)
     else
         if { _branch-exists $reporoot/$repo_dir $(_convert-ours-to-mine $branch) }; then
             _gitsync-checkout-mine
@@ -508,6 +577,12 @@ function _gitsync-dissolve() {
     fi
 }
 
+function _fix-inconsistencies() {
+    local repo_dir=$(_infer-repo-dir)
+    _verify-gsremote $reporoot/$repo_dir
+    _fix-branches $repo_dir
+}
+
 # TODO: fetch-all and push-all integration with async
 function gitsync() {
     gitsync_report_mode="always" # hard coding this because I'm having trouble dealing with git commands returning zeros when they shouldnt (see: _error-log-has-errors)
@@ -527,17 +602,13 @@ function gitsync() {
             if [ "$1" = "--this" ]; then
                 _gitsync-push 
             else
-                _suppress_iterative=true
-                _suppress=true
-                ( _push-all )
+                ( _gitsync-push-all )
             fi
             ;;
         fetch)
             if [ "$1" = "--this" ]; then
                 ( _gitsync-fetch )
             else
-                _suppress_iterative=true
-                _suppress=true
                 ( _gitsync-fetch-all )
             fi
             ;;
@@ -562,6 +633,9 @@ function gitsync() {
         dissolve)
             _gitsync-dissolve
             ;;
+        fix-inconsistencies)
+            _fix-inconsistencies
+            ;;
     esac
             [[ $(cat $_exit_code_file) = 1 ]] && exit_code=1
     _finalize
@@ -570,7 +644,7 @@ function gitsync() {
 
 #workflow
 # when you're done and when you come back ...
-# _push-all && suspend && _fetch-all && ?merge-public?
+# _gitsync-push-all && suspend && _fetch-all && ?merge-public?
 #
 # while working ...
 # hack away on mine
