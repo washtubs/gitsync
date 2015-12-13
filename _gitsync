@@ -42,6 +42,7 @@ function _gitsync() {
             if { _gitsync-can-dissolve }; then
                 _gs_actions=($_gs_actions "dissolve")
             fi
+            _gs_actions+=(fix-inconsistencies)
         else
             _gs_actions=(push fetch)
         fi
