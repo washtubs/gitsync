@@ -26,6 +26,15 @@ function _gitsync-sanity() {
     fi
 }
 
+function _gitsync-repo-sanity() {
+    # avoid doing certain things if it does not appear that the repo has gone through setup, or is otherwise wrong
+    local repo=$1
+    if [ -z "$(git -C $repo remote -v | awk -valias=$gsremote '$1 == alias{print $1}')" ]; then
+        echo "$repo: You dont seem to have a private remote set up. run setup for this repo."
+        return 1
+    fi
+}
+
 function _our_git_branch() {
     echo "${machine_id}-dev"
 }
@@ -114,7 +123,7 @@ function _branchA-is-ahead-of-branchB() {
     local repo=$1
     local branchA=$2
     local branchB=$3
-    [ ! -z "$(git -C $repo branch $branchA --contains $(git -C $repo merge-base $branchA $branchB) | grep "\s$branchA$")" ] \
+    { git -C $repo merge-base --is-ancestor $(git -C $repo merge-base $branchA $branchB) $branchA } \
         && [ ! "$(git -C $repo rev-parse $branchA)" = "$(git -C $repo merge-base $branchA $branchB)" ]
 
 }
@@ -145,6 +154,8 @@ function _add-and-auto-commit() {
 function _push-branch() {
     local repo_dir=$1
     local branch=$2
+    #echo "$repo_dir: not doing anything branch $branch"
+    #return 0
     if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
         if [ $(_current-branch $reporoot/$repo_dir) = $ours/$branch ]; then 
             _add-and-auto-commit $reporoot/$repo_dir || return 1
@@ -155,7 +166,7 @@ function _push-branch() {
     fi
     _gsgit -C $reporoot/$repo_dir push --force $gsremote $ours/$branch &>>$_error_log || \
         { _msg "Failed to push $ours/$branch to $gsremote"; return 1 }
-    _branch-has-things-to-push $repo_dir $branch &&
+    #_branch-has-things-to-push $repo_dir $branch &&
         { _gsgit -C $reporoot/$repo_dir push $gsremote $branch &>>$_error_log || \
             { _msg "Failed to push $branch to $gsremote"; return 1 } }
     return 0
@@ -261,6 +272,7 @@ function _push-repo-async() {
 }
 
 function _push-repo() {
+    _gitsync-repo-sanity $reporoot/$repo_dir || return 1
     local repo_dir=$1
     local ours=$(_our_git_branch)
     local refs=$(_git_dir $reporoot/$repo_dir)/refs/heads/$ours
@@ -442,6 +454,8 @@ function _verify-gsremote() {
                 url=$(gitolite-verify $(_infer-repo-dir))
             fi
         fi
+    else
+        return 0
     fi
     if [ -z $url ]; then
         return 1
@@ -459,6 +473,11 @@ function _verify-gsremote() {
 function _gitsync-setup() {
     local branch_to_track=$1
     local repo=$reporoot/$(_infer-repo-dir)
+    local ours=$(_our_git_branch)
+    if { _is-mine-branch $branch_to_track } || { git branch | grep --silent " $ours/$branch_to_track$"}; then
+        _msg "Branch is already setup..."
+        return 0
+    fi
     _verify-gsremote $repo || return 1
             
     if [ -z $branch_to_track ]; then
@@ -466,9 +485,8 @@ function _gitsync-setup() {
         _msg "gitsync mount master"
         return 1
     fi
-    local ours=$(_our_git_branch)
     # if one already exists from another branch dont ask
-    if ! { _merge-candidates $repo | grep --silent "^$gsremote" }; then
+    if ! { git -C $repo branch -vr | grep --silent "^$gsremote" }; then
         _verify-checklist $branch_to_track || return 1
     fi
 
@@ -618,16 +636,16 @@ function gitsync() {
         merge)
             _gitsync-merge $@
             ;;
-        merge-default)
-            _gitsync-merge-default
-            ;;
+        #merge-default)
+            #_gitsync-merge-default
+            #;;
         swap)
             _gitsync-swap
             ;;
         checkout)
             _gitsync-checkout $1
             ;;
-        mount)
+        mount) #setup
             _gitsync-mount
             ;;
         dissolve)
