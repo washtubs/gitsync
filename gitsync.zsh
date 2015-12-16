@@ -43,7 +43,7 @@ function _git_dir() {
     repo=$1
     [ -d $repo/.git ] && { echo $repo/.git; return; }
     [ -f $repo/.git ] && { echo $repo/$(cat $repo/.git | grep "^gitdir:" | sed 's/^gitdir: //'); return; }
-    _msg "$repo/.git does not appear to be a file or directory."
+    echo "$repo/.git does not appear to be a file or directory." >&2
     
 }
 
@@ -282,7 +282,8 @@ function _push-repo() {
         return 1
     fi
     _indent=""
-    for branch in $(ls $refs); do
+    for branch in $(find $refs -type f); do
+        branch=$(basename $branch)
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
         _suppress=false _msg "pushing $repo_dir @ $ours/$branch ..."
         local oldindent=$_indent
