@@ -40,6 +40,8 @@ function _our_git_branch() {
 }
 
 function _git_dir() {
+    # TODO: refactor with "show-ref --verify --quiet" instead
+    # alternatively, replace this function with usage of "rev-parse --git-dir"
     repo=$1
     [ -d $repo/.git ] && { echo $repo/.git; return; }
     [ -f $repo/.git ] && { echo $repo/$(cat $repo/.git | grep "^gitdir:" | sed 's/^gitdir: //'); return; }
@@ -271,6 +273,7 @@ function _push-repo-async() {
     _push-repo $1
 }
 
+# TODO: refactor using show-ref to iterate branches
 function _push-repo() {
     _gitsync-repo-sanity $reporoot/$repo_dir || return 1
     local repo_dir=$1
