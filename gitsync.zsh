@@ -110,16 +110,18 @@ function _msg() {
 }
 
 function _branch-has-things-to-push() {
-    # this is basically checking
-    # A: branch contains the merge base with upstream
-    # AND
-    # B: branch's HEAD isn't *itself* the merge base
     local repo_dir=$1
     local branch=$2
+    # this handles new branch
+    git -C $reporoot/$repo_dir rev-parse --verify --quiet $gsremote/$branch >/dev/null || return 0
     _branchA-is-ahead-of-branchB $reporoot/$repo_dir $branch $gsremote/$branch
 }
 
 function _branchA-is-ahead-of-branchB() {
+    # this is basically checking
+    # A: branch contains the merge base with upstream
+    # AND
+    # B: branch's HEAD isn't *itself* the merge base
     local repo=$1
     local branchA=$2
     local branchB=$3
@@ -157,18 +159,27 @@ function _push-branch() {
     #echo "$repo_dir: not doing anything branch $branch"
     #return 0
     if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
-        if [ $(_current-branch $reporoot/$repo_dir) = $ours/$branch ]; then 
-            _add-and-auto-commit $reporoot/$repo_dir || return 1
-        else
-            _msg "Your *current* branch is dirty and you are not on $ours/$branch"
-            return 1
-        fi
+        # This is no longer valid: _push-branch is asynchronous typically, and cant handle
+        # user interaction of _add-and-auto-commit
+        #if [ $(_current-branch $reporoot/$repo_dir) = $ours/$branch ]; then 
+            #_add-and-auto-commit $reporoot/$repo_dir || return 1
+        #else
+        _msg "Your *current* branch is dirty and you are not on $ours/$branch"
+        return 1
+        #fi
     fi
-    _gsgit -C $reporoot/$repo_dir push --force $gsremote $ours/$branch &>>$_error_log || \
-        { _msg "Failed to push $ours/$branch to $gsremote"; return 1 }
-    #_branch-has-things-to-push $repo_dir $branch &&
-        { _gsgit -C $reporoot/$repo_dir push $gsremote $branch &>>$_error_log || \
-            { _msg "Failed to push $branch to $gsremote"; return 1 } }
+    if { _branch-has-things-to-push $repo_dir $ours/$branch }; then
+        _gsgit -C $reporoot/$repo_dir push --force $gsremote $ours/$branch &>>$_error_log || \
+            { _msg "Failed to push $ours/$branch to $gsremote"; return 1 }
+    else
+        echo "$ours/$branch does not need to be pushed." >> $_error_log
+    fi
+    if { _branch-has-things-to-push $repo_dir $branch }; then
+        _gsgit -C $reporoot/$repo_dir push $gsremote $branch &>>$_error_log || \
+            { _msg "Failed to push $branch to $gsremote"; return 1 }
+    else
+        echo "$branch does not need to be pushed." >> $_error_log
+    fi
     return 0
 }
 
@@ -183,14 +194,26 @@ function _report-command-async() {
 
 function _error-log-has-errors() {
     # try to be pretty specific here. We really dont want false positives
-    cat $_error_log | grep -P --silent "(error:)"
+    local last_retry_lineno=0
+    if { cat $1 | grep --silent "[RETRY]" }; then
+        local last_retry_lineno=$(cat -n $1 | grep "[RETRY]" | tail -n1 | awk '{print $1}')
+    fi
+    cat $1 | awk -vstart=$last_retry_lineno 'NR>=start{print $0}' | grep -P --silent "(error:|fatal:)"
+}
+
+function _has-fetch-retry-errors() {
+    local temp_log=$1
+    cat $temp_log | grep -P --silent "(Connection closed|Connection reset|ssh_exchange_identification)"
+    local result=$?
+    rm $temp_log # we DEFINITELY dont need this anymore. yep, for sure
+    return $result
 }
 
 function _report-command() {
     $@ 
     local success=$?
     # fail as well if the error log has errors, even though the exit code didnt indicate error
-    _error-log-has-errors && success=1
+    _error-log-has-errors $_error_log && success=1
 
     local _old_suppress=$_suppress
     if ! $_silent; then
@@ -266,6 +289,23 @@ function _git-fetch-all() {
     _gsgit -C $1 fetch --all &>>$_error_log
 }
 
+
+function _git-fetch-all-with-retry() {
+    local logcheck=$(mktemp "/tmp/gitsyncXXXX")
+    _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log
+    _has-fetch-retry-errors $logcheck && \
+    { echo "[RETRY] failed attempt 1, sleeping 5 seconds" >> $_error_log; sleep 5; 
+      _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
+    _has-fetch-retry-errors $logcheck && \
+    { echo "[RETRY] failed attempt 2, sleeping 10 seconds" >> $_error_log; sleep 10; 
+      _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
+    _has-fetch-retry-errors $logcheck && \
+    { echo "[RETRY] failed attempt 3, sleeping 15 seconds" >> $_error_log; sleep 15; 
+      _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
+    _has-fetch-retry-errors $logcheck && \
+        echo "[GIVING UP] well this sucks. we tried at least." >> $_error_log;
+}
+
 function _push-repo-async() {
     push_async="true"
     _push-repo $1
@@ -285,7 +325,7 @@ function _push-repo() {
     for branch in $(find $refs -type f); do
         branch=$(basename $branch)
         _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
-        _suppress=false _msg "pushing $repo_dir @ $ours/$branch ..."
+        #_suppress=false _msg "pushing $repo_dir @ $ours/$branch ..."
         local oldindent=$_indent
         _indent=${_indent}"    "
         if [ "$push_async" = "true" ]; then
@@ -414,7 +454,7 @@ function _gitsync-fetch-all() {
         repos=$(_get-repos)
     fi
     for repo_dir in $repos; do
-        _suppress=false _msg "Fetching $repo_dir ..."
+        #_suppress=false _msg "Fetching $repo_dir ..."
         _gitsync-fetch $repo_dir &
         pids=($pids $!)
     done
@@ -427,7 +467,7 @@ function _gitsync-fetch() {
     _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
     #_msg "Fetching $repo_dir ..."
     #_indent="    "
-    _report-command-async "fetching $repo_dir" _git-fetch-all $reporoot/$repo_dir
+    _report-command-async "fetching $repo_dir" _git-fetch-all-with-retry $reporoot/$repo_dir
 }
 
 function gitolite-verify() {
