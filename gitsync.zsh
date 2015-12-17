@@ -195,11 +195,11 @@ function _report-command-async() {
 }
 
 function _error-log-has-errors() {
-    # try to be pretty specific here. We really dont want false positives
     local last_retry_lineno=0
     if { cat $1 | grep --silent "[RETRY]" }; then
         local last_retry_lineno=$(cat -n $1 | grep "[RETRY]" | tail -n1 | awk '{print $1}')
     fi
+    # try to be pretty specific here. We really dont want false positives
     cat $1 | awk -vstart=$last_retry_lineno 'NR>=start{print $0}' | grep -P --silent "(error:|fatal:)"
 }
 
@@ -305,7 +305,7 @@ function _git-fetch-all-with-retry() {
     { echo "[RETRY] failed attempt 3, sleeping 15 seconds" >> $_error_log; sleep 15; 
       _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
     _has-fetch-retry-errors $logcheck && \
-        echo "[GIVING UP] well this sucks. we tried at least." >> $_error_log;
+    { echo "[GIVING UP] well this sucks. we tried at least." >> $_error_log; } || return 0
 }
 
 function _push-repo-async() {
