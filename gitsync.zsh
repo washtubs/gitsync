@@ -203,9 +203,26 @@ function _error-log-has-errors() {
     cat $1 | awk -vstart=$last_retry_lineno 'NR>=start{print $0}' | grep -P --silent "(error:|fatal:)"
 }
 
+# I'm running into this as an error that should be considered intermittent. It's problematic, because it
+# doesn't include a reference to ssh_exchange_identification, ir anything about the connection being screwy
+# but that's clearly what is going on because, this happens after retries that get those errors. And trying
+# again later usually works. The problem is this error I BELIEVE is indistinguishable from another error
+# where the remote url is incorrect. Obviously we don't want to retry in the ladder case.
+# Here is the error:
+#
+#fatal: Could not read from remote repository.
+
+#Please make sure you have the correct access rights
+#and the repository exists.
+#
+# CORRECTION: I believe this can be distinguished by the additional DENIED by fallthru line which indicates
+# a misspelling
+
 function _has-fetch-retry-errors() {
     local temp_log=$1
-    cat $temp_log | grep -P --silent "(Connection closed|Connection reset|ssh_exchange_identification)"
+    # should fix above comment
+    cat $temp_log | grep -Pv --silent 'DENIED' && \
+    cat $temp_log | grep -P --silent "(Connection closed|Connection reset|ssh_exchange_identification|Could not read from remote repository)"
     local result=$?
     rm $temp_log # we DEFINITELY dont need this anymore. yep, for sure
     return $result
@@ -296,13 +313,13 @@ function _git-fetch-all-with-retry() {
     local logcheck=$(mktemp "/tmp/gitsyncXXXX")
     _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log
     _has-fetch-retry-errors $logcheck && \
-    { echo "[RETRY] failed attempt 1, sleeping 5 seconds" >> $_error_log; sleep 5; 
+    { echo "[RETRY] failed attempt 1, sleeping 7 seconds" >> $_error_log; sleep 7; 
       _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
     _has-fetch-retry-errors $logcheck && \
-    { echo "[RETRY] failed attempt 2, sleeping 10 seconds" >> $_error_log; sleep 10; 
+    { echo "[RETRY] failed attempt 2, sleeping 14 seconds" >> $_error_log; sleep 14; 
       _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
     _has-fetch-retry-errors $logcheck && \
-    { echo "[RETRY] failed attempt 3, sleeping 15 seconds" >> $_error_log; sleep 15; 
+    { echo "[RETRY] failed attempt 3, sleeping 21 seconds" >> $_error_log; sleep 21; 
       _gsgit -C $1 fetch --all &>$logcheck &>>$_error_log } || return 0
     _has-fetch-retry-errors $logcheck && \
     { echo "[GIVING UP] well this sucks. we tried at least." >> $_error_log; } || return 0
