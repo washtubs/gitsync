@@ -116,7 +116,7 @@ function _branch-has-things-to-push() {
     # B: branch's HEAD isn't *itself* the merge base
     local repo_dir=$1
     local branch=$2
-    _branchA-is-ahead-of-branchB $reporoot/$repo_dir $branch origin/$branch
+    _branchA-is-ahead-of-branchB $reporoot/$repo_dir $branch $gsremote/$branch
 }
 
 function _branchA-is-ahead-of-branchB() {
@@ -252,7 +252,7 @@ function _report-log-success() {
 function _init() {
 }
 
-function _finalize() {
+function _gitsync-finalize() {
     if $_error_files_present; then
         echo
         echo "Please remove any error files when your done with them."
@@ -532,6 +532,7 @@ function _gitsync-swap() {
     # swapping to "ours" triggers a "pull" master merges $gsremote/master
     local repo_dir=$(_infer-repo-dir)
     local branch=$(_current-branch $reporoot/$repo_dir)
+    _error_log=$(mktemp /tmp/XXXX.gitsyncerrlog)
     if { _is-mine-branch $branch }; then
         if [ ! -z "$(git -C $reporoot/$repo_dir status --porcelain)" ]; then # dirty
             _add-and-auto-commit $reporoot/$repo_dir || return 1
@@ -654,7 +655,7 @@ function gitsync() {
             ;;
     esac
             [[ $(cat $_exit_code_file) = 1 ]] && exit_code=1
-    _finalize
+    _gitsync-finalize
     return $exit_code
 }
 
