@@ -318,13 +318,11 @@ function _convert-mine-to-ours() {
 function _merge-candidates() {
     local repo=$1
     local ours_branch=$(_current-branch $repo)
-    local search_in
-    search_in=( $(_git_dir $repo)/refs/heads $(_git_dir $repo)/refs/remotes/ )
-    res=($( \
-        for root in $search_in; do
-            find $root -path "*-dev/$ours_branch" -exec python2 -c "import os.path; print os.path.relpath('{}', '$root')" \;
-        done | sort -u | grep -v "$gsremote/$(_our_git_branch)/$ours_branch" \
-    ))
+    # TODO: show-ref EVERYWHERE. it disambiguates remotes and heads. and is very well suited to machine interactions.
+    # just be wary not to complicate commands that are reported to the user
+    res=($(git -C $repo show-ref | awk '{print $2}' | \
+        grep -e "^refs/heads/$(_our_git_branch)" -e "^refs/remotes/$gsremote/.*-dev/$ours_branch" | grep -v "^refs/remotes/$gsremote/$(_our_git_branch)" | \
+        sed 's/^refs\/\(heads\|remotes\)\///'))
     for candidate in $res; do
         local suffix=""
         _auto-wip-on-top $repo $candidate && suffix="~1"
