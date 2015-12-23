@@ -24,7 +24,7 @@ function _gs-checkout() {
 
 function _gs-fetch-or-push() {
     local candidates
-    candidates=("--this" "--all")
+    candidates=("--all")
     if [ $cur = 2 ]; then
         _describe candidates candidates
     fi
