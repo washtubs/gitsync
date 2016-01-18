@@ -361,7 +361,17 @@ function _push-repo() {
 }
 
 function _infer-repo-dir() {
-    python2 -c "import os.path; print os.path.relpath('$(git rev-parse --show-toplevel)', '$reporoot')"
+    # we MIGHT be a symlink
+    local toplevel=$(git rev-parse --show-toplevel)
+    if { echo $toplevel | grep --silent -v "^$reporoot" }; then
+        # it's a symlink, hopefully its just the $reporoot/$(basename $toplevel)
+        candidate_as_symlink=$reporoot/$(basename $toplevel)
+        if [ "$(readlink -f $reporoot/$(basename $toplevel))" = $toplevel ]; then
+            echo $(basename $toplevel)
+        fi
+    else
+        python2 -c "import os.path; print os.path.relpath('$toplevel', '$reporoot')"
+    fi
 }
 
 function _is-mine-branch() {
