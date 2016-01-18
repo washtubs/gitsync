@@ -659,17 +659,17 @@ function gitsync() {
     shift
     case $action in
         push)
-            if [ "$1" = "--this" ]; then
-                _gitsync-push 
-            else
+            if [ "$1" = "--all" ]; then
                 ( _gitsync-push-all )
+            else
+                _gitsync-push 
             fi
             ;;
         fetch)
-            if [ "$1" = "--this" ]; then
-                ( _gitsync-fetch )
-            else
+            if [ "$1" = "--all" ]; then
                 ( _gitsync-fetch-all )
+            else
+                ( _gitsync-fetch )
             fi
             ;;
         autocommit)
